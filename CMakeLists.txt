@@ -7,7 +7,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(raylib CONFIG REQUIRED)
 
-add_executable(KaboomNshit src/main.cpp)
+file(GLOB GAME_SOURCES CONFIGURE_DEPENDS "src/*.cpp")
+add_executable(KaboomNshit ${GAME_SOURCES})
+target_include_directories(KaboomNshit PRIVATE src)
 target_link_libraries(KaboomNshit PRIVATE raylib)
 
 if(WIN32)
