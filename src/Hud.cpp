@@ -30,12 +30,15 @@ PlayerView Hud::MakeView(const Player& p) {
 }
 
 void Hud::Draw(const PlayerView& pv, int fps) {
+    const int sw = GetScreenWidth();
+    const int sh = GetScreenHeight();
+
     DrawText(TextFormat("%d FPS", fps), 16, 12, 22, GREEN);
 
     const int boxX = 16;
     const int boxW = 200;
     const int boxH = 28;
-    int y = cfg::SCREEN_H - 12 - boxH;
+    int y = sh - 12 - boxH;
 
     DrawRectangle(boxX, y, boxW, boxH, BOX_BG);
     DrawText(TextFormat("STAMINA: %d", (int)pv.stamina), boxX + 8, y + 4, 22, RED);
@@ -45,7 +48,7 @@ void Hud::Draw(const PlayerView& pv, int fps) {
     DrawText(TextFormat("HP: %d", (int)pv.hp), boxX + 8, y + 4, 22, RED);
     y -= boxH + 4;
 
-    int dashY = cfg::SCREEN_H - 12 - boxH;
+    int dashY = sh - 12 - boxH;
     int dashX = boxX + boxW + 12;
     int slotW = 26;
     int slotH = 18;
@@ -67,16 +70,16 @@ void Hud::Draw(const PlayerView& pv, int fps) {
 
     if (pv.hitFlash > 0.0f) {
         Color flash = Fade(RED, pv.hitFlash * 0.35f);
-        DrawRectangle(0, 0, cfg::SCREEN_W, cfg::SCREEN_H, flash);
+        DrawRectangle(0, 0, sw, sh, flash);
     }
 
-    if (pv.isSliding) DrawText("SLIDE", cfg::SCREEN_W / 2 - 30, cfg::SCREEN_H - 80, 20, RED);
-    if (pv.isDashing) DrawText("DASH",  cfg::SCREEN_W / 2 - 28, cfg::SCREEN_H - 80, 20, RED);
+    if (pv.isSliding) DrawText("SLIDE", sw / 2 - 30, sh - 80, 20, RED);
+    if (pv.isDashing) DrawText("DASH",  sw / 2 - 28, sh - 80, 20, RED);
 }
 
 void Hud::DrawCrosshair() {
-    int cx = cfg::SCREEN_W / 2;
-    int cy = cfg::SCREEN_H / 2;
+    int cx = GetScreenWidth() / 2;
+    int cy = GetScreenHeight() / 2;
     DrawRectangle(cx - 1, cy - 6, 2, 4, BLACK);
     DrawRectangle(cx - 1, cy + 2, 2, 4, BLACK);
     DrawRectangle(cx - 6, cy - 1, 4, 2, BLACK);
@@ -85,8 +88,8 @@ void Hud::DrawCrosshair() {
 
 void Hud::DrawHitMarker() {
     if (hitMarkerTimer <= 0.0f) return;
-    int cx = cfg::SCREEN_W / 2;
-    int cy = cfg::SCREEN_H / 2;
+    int cx = GetScreenWidth() / 2;
+    int cy = GetScreenHeight() / 2;
     Color c = Fade(RED, hitMarkerTimer / 0.18f);
     DrawLine(cx - 10, cy - 10, cx - 4, cy - 4, c);
     DrawLine(cx + 10, cy - 10, cx + 4, cy - 4, c);
@@ -95,8 +98,8 @@ void Hud::DrawHitMarker() {
 }
 
 void Hud::DrawGunOverlay(float recoilKick) {
-    const float cx = (float)cfg::SCREEN_W;
-    const float cy = (float)cfg::SCREEN_H;
+    const float cx = (float)GetScreenWidth();
+    const float cy = (float)GetScreenHeight();
     const float kick = recoilKick * 80.0f;
 
     Vector2 muzzle  = { cx * 0.62f, cy * 0.78f + kick };

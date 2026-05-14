@@ -5,6 +5,7 @@
 #include "World.h"
 #include "Enemy.h"
 #include "Hud.h"
+#include "Bullet.h"
 
 // Top-level orchestrator. Owns the Player, World, Enemies, HUD, and the
 // short-lived effects (tracers). Responsible for the main Update/Draw split.
@@ -21,12 +22,6 @@ public:
     void Tick();
 
 private:
-    struct Tracer {
-        Vector3 a;
-        Vector3 b;
-        float   life;
-    };
-
     void Update(float dt);
     void Draw();
     void Draw3DWorld(const Camera3D& cam);
@@ -34,7 +29,9 @@ private:
 
     void HandleShooting(float dt);
     void SpawnEnemies(int count);
-    void DrawTracers();
+    void UpdateBullets(float dt);
+    void DrawBullets();
+    void DrawMuzzleFlash(const Camera3D& cam);
     void DrawDeathScreen();
     void DrawHelpText();
 
@@ -42,9 +39,10 @@ private:
     World               world;
     std::vector<Enemy>  enemies;
     Hud                 hud;
-    std::vector<Tracer> tracers;
+    std::vector<Bullet> bullets;
 
     float fireCooldown;
+    float muzzleFlash;
     bool  paused;
     bool  showHelp;
 };

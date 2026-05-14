@@ -6,12 +6,23 @@
 
 Game::Game()
     : fireCooldown(0.0f)
+    , muzzleFlash(0.0f)
     , paused(false)
     , showHelp(true)
 {}
 
 bool Game::Initialize() {
+    SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT);
     InitWindow(cfg::SCREEN_W, cfg::SCREEN_H, "KaboomNshit");
+
+    int monitor = GetCurrentMonitor();
+    int mw = GetMonitorWidth(monitor);
+    int mh = GetMonitorHeight(monitor);
+    if (mw > 0 && mh > 0) {
+        SetWindowSize(mw, mh);
+    }
+    ToggleFullscreen();
+
     SetTargetFPS(144);
     DisableCursor();
 
@@ -47,68 +58,51 @@ void Game::SpawnEnemies(int count) {
 
 void Game::HandleShooting(float dt) {
     fireCooldown = std::max(0.0f, fireCooldown - dt);
+    muzzleFlash  = std::max(0.0f, muzzleFlash  - dt);
 
     if (player.Hp() <= 0.0f) return;
     if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) return;
     if (fireCooldown > 0.0f) return;
 
     fireCooldown = cfg::FIRE_COOLDOWN;
+    muzzleFlash  = cfg::MUZZLE_FLASH_TIME;
 
     Camera3D cam = player.BuildCamera();
-    Vector3 origin = cam.position;
     Vector3 dir = Vector3Normalize(Vector3Subtract(cam.target, cam.position));
+    Vector3 muzzle = Vector3Add(cam.position, Vector3Scale(dir, 0.45f));
 
-    float bestT = cfg::BULLET_RANGE;
-    int bestEnemy = -1;
-    Vector3 bestPoint = Vector3Add(origin, Vector3Scale(dir, cfg::BULLET_RANGE));
-
-    HitInfo worldHit = world.Raycast(origin, dir, cfg::BULLET_RANGE);
-    if (worldHit.hit && worldHit.distance < bestT) {
-        bestT = worldHit.distance;
-        bestPoint = worldHit.point;
-    }
-
-    for (int i = 0; i < (int)enemies.size(); ++i) {
-        float t;
-        Vector3 p;
-        if (enemies[i].RaycastHit(origin, dir, bestT, t, p)) {
-            if (t < bestT) {
-                bestT = t;
-                bestEnemy = i;
-                bestPoint = p;
-            }
-        }
-    }
-
-    if (bestEnemy >= 0) {
-        enemies[bestEnemy].TakeDamage(cfg::BULLET_DAMAGE, origin);
-        hud.TriggerHitMarker();
-    }
-
-    Vector3 muzzle = Vector3Add(origin, Vector3Scale(dir, 0.6f));
-    tracers.push_back({ muzzle, bestPoint, cfg::TRACER_LIFETIME });
-
+    bullets.emplace_back(muzzle, dir, cfg::BULLET_SPEED, cfg::BULLET_DAMAGE);
     player.AddRecoil(cfg::RECOIL_KICK);
 }
 
+void Game::UpdateBullets(float dt) {
+    for (Bullet& b : bullets) {
+        if (!b.IsAlive()) continue;
+        int hit = b.Step(dt, world, enemies.data(), (int)enemies.size());
+        if (hit >= 0) {
+            enemies[hit].TakeDamage(b.Damage(), b.Position());
+            hud.TriggerHitMarker();
+        }
+    }
+    bullets.erase(std::remove_if(bullets.begin(), bullets.end(),
+                                 [](const Bullet& b) { return !b.IsAlive(); }),
+                  bullets.end());
+}
+
 void Game::Update(float dt) {
-    if (IsKeyPressed(KEY_F1)) showHelp = !showHelp;
+    if (IsKeyPressed(KEY_F1))           showHelp = !showHelp;
+    if (IsKeyPressed(KEY_F11))          ToggleFullscreen();
     if (IsKeyPressed(KEY_R) && player.Hp() <= 0.0f) {
         player = Player();
+        bullets.clear();
         SpawnEnemies(8);
     }
 
     player.Update(dt, world);
-
     for (Enemy& e : enemies) e.Update(dt, world, player);
 
     HandleShooting(dt);
-
-    for (Tracer& t : tracers) t.life -= dt;
-    tracers.erase(std::remove_if(tracers.begin(), tracers.end(),
-                                 [](const Tracer& t) { return t.life <= 0.0f; }),
-                  tracers.end());
-
+    UpdateBullets(dt);
     hud.Update(dt);
 
     int aliveEnemies = 0;
@@ -116,23 +110,29 @@ void Game::Update(float dt) {
     if (aliveEnemies == 0) SpawnEnemies((int)enemies.size() + 2);
 }
 
-void Game::DrawTracers() {
-    for (const Tracer& t : tracers) {
-        float a = t.life / cfg::TRACER_LIFETIME;
-        DrawLine3D(t.a, t.b, Fade(BLACK, a));
-    }
+void Game::DrawBullets() {
+    for (const Bullet& b : bullets) b.Draw();
+}
+
+void Game::DrawMuzzleFlash(const Camera3D& cam) {
+    if (muzzleFlash <= 0.0f) return;
+    Vector3 dir = Vector3Normalize(Vector3Subtract(cam.target, cam.position));
+    Vector3 mp  = Vector3Add(cam.position, Vector3Scale(dir, 0.5f));
+    float r = 0.18f * (muzzleFlash / cfg::MUZZLE_FLASH_TIME);
+    DrawSphere(mp, r, RED);
 }
 
 void Game::Draw3DWorld(const Camera3D& cam) {
     BeginMode3D(cam);
         world.Draw();
         for (const Enemy& e : enemies) e.Draw();
-        DrawTracers();
+        DrawBullets();
+        DrawMuzzleFlash(cam);
     EndMode3D();
 }
 
 void Game::DrawHelpText() {
-    const int x = cfg::SCREEN_W - 290;
+    const int x = GetScreenWidth() - 290;
     int y = 12;
     Color c = { 30, 30, 30, 220 };
     DrawText("WASD     move",      x, y, 18, c); y += 20;
@@ -142,17 +142,20 @@ void Game::DrawHelpText() {
     DrawText("LCTRL    dash",      x, y, 18, c); y += 20;
     DrawText("C        slide",     x, y, 18, c); y += 20;
     DrawText("LMB      shoot",     x, y, 18, c); y += 20;
-    DrawText("F1       toggle",    x, y, 18, c);
+    DrawText("F1       toggle UI", x, y, 18, c); y += 20;
+    DrawText("F11      fullscreen",x, y, 18, c);
 }
 
 void Game::DrawDeathScreen() {
-    DrawRectangle(0, 0, cfg::SCREEN_W, cfg::SCREEN_H, Fade(WHITE, 0.6f));
+    int sw = GetScreenWidth();
+    int sh = GetScreenHeight();
+    DrawRectangle(0, 0, sw, sh, Fade(WHITE, 0.6f));
     const char* msg = "YOU DIED";
     int w = MeasureText(msg, 64);
-    DrawText(msg, cfg::SCREEN_W / 2 - w / 2, cfg::SCREEN_H / 2 - 50, 64, RED);
+    DrawText(msg, sw / 2 - w / 2, sh / 2 - 50, 64, RED);
     const char* sub = "press R to restart";
-    int sw = MeasureText(sub, 24);
-    DrawText(sub, cfg::SCREEN_W / 2 - sw / 2, cfg::SCREEN_H / 2 + 30, 24, BLACK);
+    int subW = MeasureText(sub, 24);
+    DrawText(sub, sw / 2 - subW / 2, sh / 2 + 30, 24, BLACK);
 }
 
 void Game::Draw2DOverlay() {

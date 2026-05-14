@@ -6,8 +6,10 @@
 #include <algorithm>
 
 namespace {
+    // Forward at yaw=0 is +Z. Right is cross(Forward, Up) so that pressing D
+    // strafes in the direction the camera sees as "right" on screen.
     Vector3 YawForward(float yaw) { return { sinf(yaw), 0.0f, cosf(yaw) }; }
-    Vector3 YawRight(float yaw)   { return { cosf(yaw), 0.0f, -sinf(yaw) }; }
+    Vector3 YawRight(float yaw)   { return { -cosf(yaw), 0.0f, sinf(yaw) }; }
 
     Vector3 HorizontalProjection(Vector3 v) { return { v.x, 0.0f, v.z }; }
 }
@@ -28,6 +30,8 @@ Player::Player()
     , dashRechargeTimer(0.0f)
     , hitFlash(0.0f)
     , recoilKick(0.0f)
+    , coyoteTimer(0.0f)
+    , jumpBuffer(0.0f)
 {}
 
 Vector3 Player::Forward() const {
@@ -171,10 +175,18 @@ void Player::UpdateMovement(float dt) {
         }
     }
 
-    if (IsKeyPressed(KEY_SPACE) && grounded) {
-        velocity.y = cfg::JUMP_VEL;
-        grounded = false;
-        sliding = false;
+    // Coyote time + jump buffering for snappier-feeling jumps.
+    if (grounded)                 coyoteTimer = cfg::COYOTE_TIME;
+    else                          coyoteTimer = std::max(0.0f, coyoteTimer - dt);
+    if (IsKeyPressed(KEY_SPACE))  jumpBuffer  = cfg::JUMP_BUFFER;
+    else                          jumpBuffer  = std::max(0.0f, jumpBuffer - dt);
+
+    if (jumpBuffer > 0.0f && coyoteTimer > 0.0f) {
+        velocity.y  = cfg::JUMP_VEL;
+        grounded    = false;
+        sliding     = false;
+        coyoteTimer = 0.0f;
+        jumpBuffer  = 0.0f;
     }
 
     if (dashTimer <= 0.0f) velocity.y -= cfg::GRAVITY * dt;

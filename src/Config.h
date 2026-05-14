@@ -9,16 +9,18 @@ namespace cfg {
     constexpr float PLAYER_RADIUS       = 0.35f;
     constexpr float MOUSE_SENS          = 0.0022f;
 
-    constexpr float WALK_SPEED          = 7.0f;
-    constexpr float SPRINT_SPEED        = 12.0f;
-    constexpr float MAX_AIR_SPEED       = 14.0f;
-    constexpr float GROUND_ACCEL        = 80.0f;
-    constexpr float AIR_ACCEL           = 28.0f;
-    constexpr float GROUND_FRICTION     = 9.0f;
-    constexpr float SLIDE_FRICTION      = 1.2f;
+    constexpr float WALK_SPEED          = 7.5f;
+    constexpr float SPRINT_SPEED        = 13.0f;
+    constexpr float MAX_AIR_SPEED       = 16.0f;
+    constexpr float GROUND_ACCEL        = 110.0f;
+    constexpr float AIR_ACCEL           = 45.0f;
+    constexpr float GROUND_FRICTION     = 12.0f;
+    constexpr float SLIDE_FRICTION      = 1.0f;
 
-    constexpr float JUMP_VEL            = 8.5f;
-    constexpr float GRAVITY             = 26.0f;
+    constexpr float JUMP_VEL            = 9.0f;
+    constexpr float GRAVITY             = 28.0f;
+    constexpr float COYOTE_TIME         = 0.10f;
+    constexpr float JUMP_BUFFER         = 0.12f;
     constexpr float SLIDE_BOOST         = 4.0f;
     constexpr float SLIDE_MIN_SPEED     = 3.0f;
     constexpr float SLIDE_MAX_TIME      = 1.0f;
@@ -35,9 +37,12 @@ namespace cfg {
 
     constexpr float FIRE_COOLDOWN       = 0.11f;
     constexpr float BULLET_DAMAGE       = 28.0f;
-    constexpr float BULLET_RANGE        = 200.0f;
-    constexpr float TRACER_LIFETIME     = 0.06f;
-    constexpr float RECOIL_KICK         = 0.05f;
+    constexpr float BULLET_SPEED        = 55.0f;   // m/s, visibly travels but still snappy
+    constexpr float BULLET_LIFETIME     = 2.5f;
+    constexpr float BULLET_RADIUS       = 0.10f;
+    constexpr float BULLET_TRAIL_LEN    = 0.9f;    // visual trail behind bullet (m)
+    constexpr float MUZZLE_FLASH_TIME   = 0.05f;
+    constexpr float RECOIL_KICK         = 0.06f;
 
     constexpr float ENEMY_HP            = 60.0f;
     constexpr float ENEMY_SPEED         = 3.8f;

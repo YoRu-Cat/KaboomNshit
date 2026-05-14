@@ -58,4 +58,6 @@ private:
     float   dashRechargeTimer;
     float   hitFlash;
     float   recoilKick;
+    float   coyoteTimer;   // > 0 while you can still jump after leaving ground
+    float   jumpBuffer;    // > 0 if jump was pressed recently; consumed on land
 };
