@@ -63,14 +63,13 @@ int Bullet::Step(float dt, const World& world, Enemy* enemies, int enemyCount) {
 void Bullet::Draw() const {
     if (!alive) return;
 
-    Vector3 dir = Vector3Subtract(position, prevPosition);
-    float len   = Vector3Length(dir);
-    if (len < 1e-5f) { dir = { 0, 0, 1 }; }
-    else             { dir = Vector3Scale(dir, 1.0f / len); }
+    Vector3 vdir = velocity;
+    float vlen = Vector3Length(vdir);
+    if (vlen < 1e-5f) return;
+    vdir = Vector3Scale(vdir, 1.0f / vlen);
 
-    Vector3 tail = Vector3Subtract(position, Vector3Scale(dir, cfg::BULLET_TRAIL_LEN));
+    Vector3 tail = Vector3Subtract(position, Vector3Scale(vdir, cfg::BULLET_TRAIL_LEN));
 
-    DrawLine3D(tail, position, RED);
-    DrawSphere(position, cfg::BULLET_RADIUS, RED);
-    DrawSphereWires(position, cfg::BULLET_RADIUS * 1.4f, 4, 6, BLACK);
+    DrawLine3D(tail, position, BLACK);
+    DrawCubeV(position, { cfg::BULLET_RADIUS * 2, cfg::BULLET_RADIUS * 2, cfg::BULLET_RADIUS * 2 }, BLACK);
 }

@@ -66,8 +66,9 @@ void Player::UpdateLook(float dt) {
     if (pitch >  1.5f) pitch =  1.5f;
     if (pitch < -1.5f) pitch = -1.5f;
 
-    recoilKick = std::max(0.0f, recoilKick - dt * 0.6f);
-    hitFlash   = std::max(0.0f, hitFlash   - dt * 1.5f);
+    recoilKick *= expf(-dt * 8.0f);
+    if (recoilKick < 0.001f) recoilKick = 0.0f;
+    hitFlash = std::max(0.0f, hitFlash - dt * 1.5f);
 }
 
 void Player::UpdateDash(float dt) {
@@ -212,13 +213,18 @@ void Player::Update(float dt, const World& world) {
 
 Camera3D Player::BuildCamera() const {
     Camera3D cam{};
-    Vector3 eye = position;
-    eye.y -= recoilKick * 0.3f;
-    cam.position   = eye;
-    Vector3 dir = Forward();
-    cam.target     = Vector3Add(eye, dir);
+    cam.position = position;
+    float effPitch = pitch + recoilKick;
+    if (effPitch >  1.5f) effPitch =  1.5f;
+    if (effPitch < -1.5f) effPitch = -1.5f;
+    Vector3 dir = {
+        cosf(effPitch) * sinf(yaw),
+        sinf(effPitch),
+        cosf(effPitch) * cosf(yaw)
+    };
+    cam.target     = Vector3Add(position, dir);
     cam.up         = { 0.0f, 1.0f, 0.0f };
-    cam.fovy       = sliding ? 82.0f : 75.0f;
+    cam.fovy       = sliding ? 84.0f : 78.0f;
     cam.projection = CAMERA_PERSPECTIVE;
     return cam;
 }
