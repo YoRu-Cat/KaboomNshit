@@ -49,10 +49,10 @@ namespace cfg
     constexpr float VIEWMODEL_RIGHT = 0.28f;
     constexpr float VIEWMODEL_DOWN = 0.30f;
 
-    constexpr float CAMERA_SHAKE_DECAY = 14.0f;
-    constexpr float SHAKE_ON_FIRE = 0.010f;
-    constexpr float SHAKE_ON_HIT = 0.025f;
-    constexpr float SHAKE_ON_EXPLOSION = 0.12f;
+    constexpr float CAMERA_SHAKE_DECAY = 18.0f;
+    constexpr float SHAKE_ON_FIRE = 0.000f;   // recoil pitch sells the shot, no shake needed
+    constexpr float SHAKE_ON_HIT = 0.012f;
+    constexpr float SHAKE_ON_EXPLOSION = 0.08f;
 
     constexpr float HITSTOP_ON_KILL = 0.06f;
     constexpr float HITSTOP_TIME_SCALE = 0.10f;
@@ -85,5 +85,8 @@ namespace cfg
     constexpr float ENEMY_ATTACK_CD = 0.8f;
     constexpr float ENEMY_KNOCKBACK = 6.0f;
 
-    constexpr float MAP_HALF = 45.0f;
+    constexpr float MAP_HALF = 90.0f;
+    constexpr float STAIRCASE_STEP_H = 0.75f;
+    constexpr float SLIDE_STEP_H     = 0.20f;
+    constexpr float STEP_UP_MAX      = 1.10f;  // max ledge height we auto-climb
 }

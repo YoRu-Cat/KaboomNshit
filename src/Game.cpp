@@ -3,6 +3,7 @@
 #include <raymath.h>
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 
 namespace {
     float RandRange(float lo, float hi) {
@@ -34,7 +35,9 @@ bool Game::Initialize() {
     SetTargetFPS(144);
     DisableCursor();
 
-    world.Generate(1337, 22);
+    weapons.ConfigureAll();
+
+    world.Generate((int)time(nullptr));
     SpawnEnemies(8);
     return IsWindowReady();
 }
@@ -49,7 +52,6 @@ bool Game::ShouldClose() const {
 
 void Game::SpawnEnemies(int count) {
     enemies.clear();
-    SetRandomSeed(424242);
     int placed = 0;
     int attempts = 0;
     while (placed < count && attempts < count * 30) {
@@ -57,9 +59,17 @@ void Game::SpawnEnemies(int count) {
         float x = (float)GetRandomValue(-(int)cfg::MAP_HALF + 4, (int)cfg::MAP_HALF - 4);
         float z = (float)GetRandomValue(-(int)cfg::MAP_HALF + 4, (int)cfg::MAP_HALF - 4);
         Vector3 spawn{ x, 0.0f, z };
-        if (Vector3Distance(spawn, player.Position()) < 12.0f) continue;
+        if (Vector3Distance(spawn, player.Position()) < 14.0f) continue;
         if (world.PointInsideAnyPillar(spawn, cfg::ENEMY_RADIUS + 0.2f)) continue;
-        enemies.emplace_back(spawn);
+
+        // Mix: ~60% Chaser, ~30% Shooter, ~10% Tank.
+        int roll = GetRandomValue(0, 99);
+        Enemy::Kind k;
+        if (roll < 60)      k = Enemy::CHASER;
+        else if (roll < 90) k = Enemy::SHOOTER;
+        else                k = Enemy::TANK;
+
+        enemies.emplace_back(spawn, k);
         ++placed;
     }
 }
@@ -67,17 +77,43 @@ void Game::SpawnEnemies(int count) {
 void Game::HandleShooting(float dt) {
     fireCooldown = std::max(0.0f, fireCooldown - dt);
     if (player.Hp() <= 0.0f) return;
-    if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT)) return;
     if (fireCooldown > 0.0f) return;
 
-    fireCooldown = cfg::FIRE_COOLDOWN;
+    const Weapon& w = weapons.Current();
+    bool pressed = w.IsAutomatic() ? IsMouseButtonDown(MOUSE_BUTTON_LEFT)
+                                   : IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+    if (!pressed) return;
+
+    fireCooldown = w.FireCooldown();
 
     Camera3D cam = player.BuildCamera();
-    Vector3 dir = Vector3Normalize(Vector3Subtract(cam.target, cam.position));
-    Vector3 muzzle = ViewModel::MuzzleWorldPosition(cam, player.RecoilKick());
+    Vector3 forward = Vector3Normalize(Vector3Subtract(cam.target, cam.position));
+    Vector3 muzzle  = ViewModel::MuzzleWorldPosition(cam, player.RecoilKick());
 
-    bullets.emplace_back(muzzle, dir, cfg::BULLET_SPEED, cfg::BULLET_DAMAGE);
-    player.AddRecoil(cfg::RECOIL_KICK);
+    // Build a perpendicular basis for spread.
+    Vector3 worldUp = { 0, 1, 0 };
+    Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, worldUp));
+    Vector3 up    = Vector3CrossProduct(right, forward);
+
+    int pellets = std::max(1, w.PelletCount());
+    float spread = w.SpreadRadians();
+    bool explosive = w.IsExplosive();
+    float speed   = w.BulletSpeed();
+    float damage  = w.Damage();
+
+    for (int i = 0; i < pellets; ++i) {
+        Vector3 dir = forward;
+        if (pellets > 1 || spread > 0.0f) {
+            float a1 = RandRange(-spread, spread);
+            float a2 = RandRange(-spread, spread);
+            dir = Vector3Add(forward, Vector3Add(Vector3Scale(right, sinf(a1)),
+                                                 Vector3Scale(up,    sinf(a2))));
+            dir = Vector3Normalize(dir);
+        }
+        bullets.emplace_back(muzzle, dir, speed, damage, explosive);
+    }
+
+    player.AddRecoil(w.Recoil());
     cameraShake = std::max(cameraShake, cfg::SHAKE_ON_FIRE);
 }
 
@@ -104,6 +140,13 @@ void Game::UpdateBullets(float dt) {
     for (Bullet& b : bullets) {
         if (!b.IsAlive()) continue;
         int hit = b.Step(dt, world, enemies.data(), (int)enemies.size());
+
+        // Explosive rounds detonate where they stopped (enemy hit OR wall hit).
+        if (!b.IsAlive() && b.IsExplosive()) {
+            TriggerExplosion(b.Position());
+            continue;
+        }
+
         if (hit >= 0) {
             bool wasAlive = enemies[hit].IsAlive();
             enemies[hit].TakeDamage(b.Damage(), b.Position());
@@ -120,6 +163,45 @@ void Game::UpdateBullets(float dt) {
     bullets.erase(std::remove_if(bullets.begin(), bullets.end(),
                                  [](const Bullet& b) { return !b.IsAlive(); }),
                   bullets.end());
+}
+
+void Game::CollectEnemyShots() {
+    for (Enemy& e : enemies) {
+        Vector3 origin, dir;
+        if (e.ConsumePendingShot(origin, dir)) {
+            // Enemy bullets are slower + weaker. They live in their own list.
+            enemyBullets.emplace_back(origin, dir, 38.0f, 12.0f, false, RED);
+        }
+    }
+}
+
+void Game::UpdateEnemyBullets(float dt) {
+    const Vector3 p = player.Position();
+    for (Bullet& b : enemyBullets) {
+        if (!b.IsAlive()) continue;
+        Vector3 prevPos = b.Position();
+        // Advance and hit-test against world. We pass an empty enemy array so
+        // Bullet::Step doesn't damage enemies for us.
+        b.Step(dt, world, nullptr, 0);
+        if (!b.IsAlive()) continue;
+
+        // Capsule hit: cylinder around the player from feet to head.
+        Vector3 q = b.Position();
+        float feetY = p.y - cfg::EYE_HEIGHT;
+        float headY = p.y;
+        if (q.y < feetY - 0.1f || q.y > headY + 0.3f) continue;
+        float dx = q.x - p.x;
+        float dz = q.z - p.z;
+        if (dx * dx + dz * dz < cfg::PLAYER_RADIUS * cfg::PLAYER_RADIUS) {
+            player.TakeDamage(b.Damage(), q);
+            cameraShake = std::max(cameraShake, cfg::SHAKE_ON_HIT);
+            b.Kill();
+            (void)prevPos;
+        }
+    }
+    enemyBullets.erase(std::remove_if(enemyBullets.begin(), enemyBullets.end(),
+                                      [](const Bullet& b) { return !b.IsAlive(); }),
+                       enemyBullets.end());
 }
 
 void Game::UpdateGrenades(float dt) {
@@ -200,6 +282,32 @@ void Game::Update(float dt) {
     if (IsKeyPressed(KEY_R) && player.Hp() <= 0.0f) {
         player = Player();
         bullets.clear();
+        enemyBullets.clear();
+        grenades.clear();
+        explosions.clear();
+        particles.clear();
+        SpawnEnemies(8);
+    }
+
+    // Re-roll the map with a fresh random seed.
+    if (IsKeyPressed(KEY_M)) {
+        world.Generate((int)time(nullptr) ^ GetRandomValue(1, 1 << 30));
+        player = Player();
+        bullets.clear();
+        enemyBullets.clear();
+        grenades.clear();
+        explosions.clear();
+        particles.clear();
+        SpawnEnemies(8);
+    }
+
+    // Cycle to the next theme deterministically (useful for previewing each).
+    if (IsKeyPressed(KEY_N)) {
+        int next = (world.MapSeed() + 1);
+        world.Generate(next);
+        player = Player();
+        bullets.clear();
+        enemyBullets.clear();
         grenades.clear();
         explosions.clear();
         particles.clear();
@@ -216,9 +324,13 @@ void Game::Update(float dt) {
     player.Update(worldDt, world);
     for (Enemy& e : enemies) e.Update(worldDt, world, player);
 
+    CollectEnemyShots();
+
+    weapons.HandleInput();
     HandleShooting(dt);
     HandleGrenade(dt);
     UpdateBullets(worldDt);
+    UpdateEnemyBullets(worldDt);
     UpdateGrenades(worldDt);
     UpdateExplosions(worldDt);
     UpdateParticles(worldDt);
@@ -246,7 +358,10 @@ Camera3D Game::ApplyCameraShake(Camera3D cam) {
     return cam;
 }
 
-void Game::DrawBullets()    { for (const Bullet& b : bullets)       b.Draw(); }
+void Game::DrawBullets() {
+    for (const Bullet& b : bullets)      b.Draw();
+    for (const Bullet& b : enemyBullets) b.Draw();
+}
 void Game::DrawGrenades()   { for (const Grenade& g : grenades)     g.Draw(); }
 void Game::DrawExplosions() { for (const Explosion& e : explosions) e.Draw(); }
 
@@ -269,8 +384,13 @@ void Game::Draw3DWorld(const Camera3D& cam) {
         DrawGrenades();
         DrawExplosions();
         DrawParticles();
-        viewModel.Draw(cam, player.RecoilKick(), fireCooldown > cfg::FIRE_COOLDOWN * 0.5f, swayPhase);
     EndMode3D();
+
+    // Viewmodel renders in its own 3D pass with a fixed origin camera.
+    // This guarantees it always lands in the same spot on screen.
+    const Weapon& w = weapons.Current();
+    bool firing = fireCooldown > w.FireCooldown() * 0.5f;
+    viewModel.Draw(cam, w, player.RecoilKick(), firing, swayPhase);
 }
 
 void Game::DrawHelpText() {
@@ -286,7 +406,11 @@ void Game::DrawHelpText() {
     DrawText("LMB      shoot",      x, y, 18, c); y += 20;
     DrawText("RMB / G  grenade",    x, y, 18, c); y += 20;
     DrawText("F1       toggle UI",  x, y, 18, c); y += 20;
-    DrawText("F11      fullscreen", x, y, 18, c);
+    DrawText("F11      fullscreen", x, y, 18, c); y += 20;
+    DrawText("M        new map",    x, y, 18, c); y += 20;
+    DrawText("N        next theme", x, y, 18, c); y += 20;
+    DrawText("WHEEL    swap weapon",x, y, 18, c); y += 20;
+    DrawText("1-4      pick weapon",x, y, 18, c);
 }
 
 void Game::DrawDamageVignette() {
@@ -317,6 +441,21 @@ void Game::Draw2DOverlay() {
     hud.DrawHitMarker();
     hud.Draw(Hud::MakeView(player), GetFPS());
     DrawDamageVignette();
+
+    // Map name banner — small, centered up top.
+    const char* name = world.MapName();
+    int nw = MeasureText(name, 22);
+    int sw = GetScreenWidth();
+    DrawRectangle(sw / 2 - nw / 2 - 12, 8, nw + 24, 30, { 230, 230, 230, 220 });
+    DrawText(name, sw / 2 - nw / 2, 12, 22, BLACK);
+
+    // Current weapon name, bottom-right.
+    const char* wname = weapons.Current().Name();
+    int ww = MeasureText(wname, 24);
+    int sh = GetScreenHeight();
+    DrawRectangle(sw - ww - 28, sh - 44, ww + 20, 32, { 230, 230, 230, 220 });
+    DrawText(wname, sw - ww - 18, sh - 40, 24, RED);
+
     if (showHelp) DrawHelpText();
     if (player.Hp() <= 0.0f) DrawDeathScreen();
 }
@@ -324,7 +463,9 @@ void Game::Draw2DOverlay() {
 void Game::Draw() {
     Camera3D cam = ApplyCameraShake(player.BuildCamera());
     BeginDrawing();
-        ClearBackground(WHITE);
+        // Pale, slightly-off-white. The cold cast makes the wireframes feel
+        // less like a tech demo and more like a sterile dream.
+        ClearBackground({ 240, 238, 236, 255 });
         Draw3DWorld(cam);
         Draw2DOverlay();
     EndDrawing();

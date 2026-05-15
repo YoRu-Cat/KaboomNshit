@@ -5,15 +5,21 @@
 class World;
 class Player;
 
-// Simple chasing enemy. Single state machine: pursue -> attack-in-range -> dead.
-// Designed to be expanded later (Strategy pattern: replace this entire class
-// or compose behaviors behind an IBehavior interface).
+// Enemy with three behavior variants picked via Kind.
+//   - CHASER : runs at the player, melee
+//   - SHOOTER: keeps distance, fires red bullets toward the player
+//   - TANK   : slow, hits hard, has lots of HP and a bigger silhouette
+//
+// Per-kind tuning lives in Enemy.cpp KIND_STATS table. Add a new archetype by
+// extending the enum, adding a row, and (optionally) tweaking Update/Draw.
 class Enemy : public IEntity, public IDamageable {
 public:
-    Enemy(Vector3 spawn);
+    enum Kind { CHASER = 0, SHOOTER, TANK, KIND_COUNT };
 
-    void Update(float dt) override;                            // unused (no world/player)
-    void Update(float dt, const World& world, Player& player); // real update
+    Enemy(Vector3 spawn, Kind kind = CHASER);
+
+    void Update(float dt) override;
+    void Update(float dt, const World& world, Player& player);
     void Draw() const override;
 
     // IDamageable
@@ -24,17 +30,25 @@ public:
     bool    IsAlive()  const override { return hp > 0.0f; }
     Vector3 Position() const override { return position; }
 
-    // Capsule approximation: returns true if ray hits enemy and writes t/point.
     bool RaycastHit(Vector3 origin, Vector3 dir, float maxDist, float& outT, Vector3& outPoint) const;
 
-    float DeathFade() const { return deathTimer; }
+    // Shooters set this when they fire; Game consumes it once per fire and spawns the bullet.
+    bool    ConsumePendingShot(Vector3& outOrigin, Vector3& outDir);
+    Kind    GetKind()    const { return kind; }
+    float   DeathFade()  const { return deathTimer; }
 
 private:
+    Kind    kind;
     Vector3 position;
     Vector3 velocity;
     Vector3 knockback;
     float   hp;
+    float   maxHp;
     float   attackCooldown;
+    float   shotCooldown;
+    bool    shotPending;
+    Vector3 shotOrigin;
+    Vector3 shotDir;
     float   hitFlash;
-    float   deathTimer; // counts down from 1.0 -> 0.0 after death for fade-out
+    float   deathTimer;
 };

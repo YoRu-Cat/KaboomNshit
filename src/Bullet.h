@@ -10,7 +10,8 @@ class Enemy;
 // Implements IEntity so it can later be stored in a generic entity container.
 class Bullet : public IEntity {
 public:
-    Bullet(Vector3 spawn, Vector3 direction, float speed, float damage);
+    Bullet(Vector3 spawn, Vector3 direction, float speed, float damage,
+           bool explosive = false, Color color = BLACK);
 
     // IEntity
     void    Update(float dt) override;
@@ -22,7 +23,9 @@ public:
     // Returns the enemy index that was hit, or -1 if no enemy was hit this tick.
     int     Step(float dt, const World& world, Enemy* enemies, int enemyCount);
 
-    float   Damage() const { return damage; }
+    float   Damage()      const { return damage; }
+    bool    IsExplosive() const { return explosive; }
+    void    Kill() { alive = false; }
 
 private:
     Vector3 position;
@@ -31,4 +34,6 @@ private:
     float   lifeTimer;
     float   damage;
     bool    alive;
+    bool    explosive;
+    Color   tint;
 };

@@ -15,7 +15,7 @@ namespace {
 }
 
 Player::Player()
-    : position{ 0.0f, cfg::EYE_HEIGHT, 8.0f }
+    : position{ 0.0f, cfg::EYE_HEIGHT, 0.0f }
     , velocity{ 0.0f, 0.0f, 0.0f }
     , yaw(0.0f)
     , pitch(0.0f)
@@ -200,15 +200,18 @@ void Player::Update(float dt, const World& world) {
 
     Vector3 desired = Vector3Add(position, Vector3Scale(velocity, dt));
     Vector3 resolved = world.ResolvePlayerMove(position, desired, cfg::PLAYER_RADIUS, velocity);
-
     position = resolved;
-    if (position.y <= cfg::EYE_HEIGHT + 0.001f) {
+
+    // Hard floor at ground level.
+    if (position.y < cfg::EYE_HEIGHT) {
         position.y = cfg::EYE_HEIGHT;
         if (velocity.y < 0.0f) velocity.y = 0.0f;
-        grounded = true;
-    } else {
-        grounded = false;
     }
+
+    // World decides if we're on a surface — ground OR any pillar top within
+    // a small fall tolerance. This is what makes stairs/ramps walkable.
+    grounded = world.IsGroundedAt(position, cfg::PLAYER_RADIUS);
+    if (grounded && velocity.y < 0.0f) velocity.y = 0.0f;
 }
 
 Camera3D Player::BuildCamera() const {

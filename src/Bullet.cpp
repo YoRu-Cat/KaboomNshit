@@ -5,13 +5,15 @@
 #include <raymath.h>
 #include <cmath>
 
-Bullet::Bullet(Vector3 spawn, Vector3 direction, float speed, float dmg)
+Bullet::Bullet(Vector3 spawn, Vector3 direction, float speed, float dmg, bool exp, Color c)
     : position(spawn)
     , prevPosition(spawn)
     , velocity(Vector3Scale(direction, speed))
     , lifeTimer(cfg::BULLET_LIFETIME)
     , damage(dmg)
     , alive(true)
+    , explosive(exp)
+    , tint(c)
 {}
 
 void Bullet::Update(float dt) {
@@ -70,6 +72,14 @@ void Bullet::Draw() const {
 
     Vector3 tail = Vector3Subtract(position, Vector3Scale(vdir, cfg::BULLET_TRAIL_LEN));
 
-    DrawLine3D(tail, position, BLACK);
-    DrawCubeV(position, { cfg::BULLET_RADIUS * 2, cfg::BULLET_RADIUS * 2, cfg::BULLET_RADIUS * 2 }, BLACK);
+    if (explosive) {
+        DrawLine3D(tail, position, RED);
+        float r = cfg::BULLET_RADIUS * 3.0f;
+        DrawCubeV(position, { r, r, r }, RED);
+        DrawCubeWiresV(position, { r * 1.2f, r * 1.2f, r * 1.2f }, BLACK);
+    } else {
+        DrawLine3D(tail, position, tint);
+        float r = cfg::BULLET_RADIUS * 2.0f;
+        DrawCubeV(position, { r, r, r }, tint);
+    }
 }

@@ -3,40 +3,82 @@
 #include <vector>
 #include "Types.h"
 
-// Static level geometry: a flat ground + a set of pillar AABBs.
-// Provides:
-//   - Movement collision (slide along walls, supports gravity)
-//   - Hitscan raycasts (used by weapons)
-//   - Drawing (wireframe + filled, matches the art style)
+// Static level geometry: flat ground + a set of pillar AABBs.
+// The Generate(seed) entry point picks one of several themes from the seed.
+// Each theme is a self-contained procedural recipe that pushes AABBs into
+// `pillars`. Always leaves a SPAWN_SAFE_RADIUS clear around the origin so the
+// player never spawns inside geometry.
 class World {
 public:
+    enum Theme {
+        THEME_TOWER_CITY = 0,
+        THEME_ZIGGURAT,
+        THEME_SKYBRIDGE,
+        THEME_SPIRAL_MAZE,
+        THEME_CATHEDRAL,
+        THEME_COUNT
+    };
+
     World();
 
-    void Generate(int seed, int numPillars);
+    // Single entry point. Seed picks theme as `seed % THEME_COUNT`.
+    void Generate(int seed);
 
-    // Slide-resolve a swept move from `from` to `desired`.
-    // `radius` is the player's horizontal capsule radius.
-    // On collision, the corresponding component of `velocityInOut` is zeroed
-    // so accel/gravity don't keep pushing into walls.
+    // Explicit theme variant (useful for debugging / theme-specific tuning).
+    void Generate(int seed, Theme theme);
+
     Vector3 ResolvePlayerMove(Vector3 from, Vector3 desired, float radius, Vector3& velocityInOut) const;
-
-    // Cast a ray from `origin` along `dir` (assumed normalized) up to `maxDist`.
     HitInfo Raycast(Vector3 origin, Vector3 dir, float maxDist) const;
-
-    // Test whether a point is inside any pillar (used for enemy spawn validation).
-    bool PointInsideAnyPillar(Vector3 p, float margin = 0.0f) const;
-
-    // Resolve a horizontal AABB push-out for an entity (used by enemies).
+    bool    PointInsideAnyPillar(Vector3 p, float margin = 0.0f) const;
     Vector3 ResolveEntityHorizontal(Vector3 from, Vector3 desired, float radius) const;
+    bool    IsGroundedAt(Vector3 pos, float radius) const;
+    void    Draw() const;
 
-    void Draw() const;
-
-    const std::vector<AABB>& Pillars() const { return pillars; }
+    const std::vector<AABB>& Pillars()   const { return pillars; }
+    const char*              MapName()   const { return mapName; }
+    int                      MapSeed()   const { return lastSeed; }
 
 private:
-    bool SweepAABB(Vector3 from, Vector3 desired, float radius, const AABB& box, Vector3& outResolved, int& hitAxis) const;
+    void AddPillar(float cx, float cz, float w, float h, float d, float baseY = 0.0f);
+    void AddOuterWalls();
+    bool TooCloseToSpawn(float cx, float cz, float w, float d) const;
+
+    // Stack of stepped blocks along the line from (x0,z0) to (x1,z1).
+    // Each block is `tread` deep along the line and `width` wide perpendicular.
+    void AddStaircase(float x0, float z0, float x1, float z1,
+                      int stepCount, float stepHeight, float width);
+
+    // A long, very-shallow staircase — used as a "slide ramp" the player can
+    // hit while sliding for momentum tricks. Goes from a high baseY down to 0.
+    void AddSlideRamp(float x0, float z0, float x1, float z1,
+                      float startHeight, float width);
+
+    // Imposing far-edge silhouette towers used by every theme to give a sense
+    // of being watched / surrounded.
+    void AddHorrorSilhouettes(int count);
+
+    // Ring of pillars around (cx, cz) with a single gap. Forms a "loop" the
+    // player can run around.
+    void AddPillarRing(float cx, float cz, float radius, int count,
+                       float pillarW, float pillarH);
+
+    // Two pillars + a horizontal beam between them — player can run/jump under.
+    void AddArchway(float cx, float cz, float gap, float height, float thickness, bool axisX);
+
+    // Curved chain of pillars along a sine arc between two points.
+    void AddCurveChain(float x0, float z0, float x1, float z1,
+                       float amplitude, int count, float pillarW, float pillarH);
+
+    void GenTowerCity(int seed);
+    void GenZiggurat(int seed);
+    void GenSkybridge(int seed);
+    void GenSpiralMaze(int seed);
+    void GenCathedral(int seed);
+
     bool RayVsAABB(Vector3 origin, Vector3 dir, const AABB& box, float& tNear, Vector3& normal) const;
 
     std::vector<AABB> pillars;
-    float mapHalf;
+    float             mapHalf;
+    const char*       mapName;
+    int               lastSeed;
 };

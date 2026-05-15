@@ -68,10 +68,8 @@ void Hud::Draw(const PlayerView& pv, int fps) {
 
     DrawText(TextFormat("SPD %.1f", pv.horizontalSpeed), dashX, dashY - 24, 16, BLACK);
 
-    if (pv.hitFlash > 0.0f) {
-        Color flash = Fade(RED, pv.hitFlash * 0.35f);
-        DrawRectangle(0, 0, sw, sh, flash);
-    }
+    // Full-screen damage tint is intentionally NOT drawn here — Game::DrawDamageVignette
+    // owns that effect now (border-only, no full-screen wash).
 
     if (pv.isSliding) DrawText("SLIDE", sw / 2 - 30, sh - 80, 20, RED);
     if (pv.isDashing) DrawText("DASH",  sw / 2 - 28, sh - 80, 20, RED);

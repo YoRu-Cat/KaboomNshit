@@ -9,6 +9,7 @@
 #include "Grenade.h"
 #include "Explosion.h"
 #include "ViewModel.h"
+#include "WeaponManager.h"
 
 // Top-level orchestrator. Owns the Player, World, Enemies, Bullets, Grenades,
 // Explosions, HUD, viewmodel, and short-lived effects. Responsible for the
@@ -42,7 +43,9 @@ private:
 
     void HandleShooting(float dt);
     void HandleGrenade(float dt);
+    void CollectEnemyShots();
     void UpdateBullets(float dt);
+    void UpdateEnemyBullets(float dt);
     void UpdateGrenades(float dt);
     void UpdateExplosions(float dt);
     void UpdateParticles(float dt);
@@ -65,11 +68,13 @@ private:
     World                  world;
     std::vector<Enemy>     enemies;
     std::vector<Bullet>    bullets;
+    std::vector<Bullet>    enemyBullets;
     std::vector<Grenade>   grenades;
     std::vector<Explosion> explosions;
     std::vector<Particle>  particles;
     Hud                    hud;
     ViewModel              viewModel;
+    WeaponManager          weapons;
 
     float fireCooldown;
     float grenadeCooldown;
