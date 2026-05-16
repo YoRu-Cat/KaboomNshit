@@ -20,7 +20,12 @@ public:
 
     void Update(float dt) override;
     void Update(float dt, const World& world, Player& player);
-    void Draw() const override;
+    void Draw() const override;                       // no-op (IEntity stub)
+    void Draw(const Camera3D& cam) const;             // real draw — billboarded
+
+    // Bind the per-kind textures (CHASER, SHOOTER, TANK). Pass nullptr to fall
+    // back to the procedural box body.
+    static void SetTextures(Texture2D* enemyTextures3);
 
     // IDamageable
     void  TakeDamage(float dmg, Vector3 from) override;

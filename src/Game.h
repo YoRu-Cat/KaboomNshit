@@ -10,6 +10,7 @@
 #include "Explosion.h"
 #include "ViewModel.h"
 #include "WeaponManager.h"
+#include "TextureLibrary.h"
 
 // Top-level orchestrator. Owns the Player, World, Enemies, Bullets, Grenades,
 // Explosions, HUD, viewmodel, and short-lived effects. Responsible for the
@@ -62,7 +63,7 @@ private:
     void DrawHelpText();
     void DrawDamageVignette();
 
-    Camera3D ApplyCameraShake(Camera3D cam);
+    Camera3D ApplyCameraShake(Camera3D cam) const;
 
     Player                 player;
     World                  world;
@@ -75,6 +76,7 @@ private:
     Hud                    hud;
     ViewModel              viewModel;
     WeaponManager          weapons;
+    TextureLibrary         textures;
 
     float fireCooldown;
     float grenadeCooldown;

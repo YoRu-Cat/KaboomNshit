@@ -10,6 +10,14 @@ void WeaponManager::ConfigureAll() {
     current = 0;
 }
 
+void WeaponManager::Update(float dt) {
+    for (int i = 0; i < Weapon::TYPE_COUNT; ++i) weapons[i].Update(dt);
+}
+
+void WeaponManager::RefillAll() {
+    for (int i = 0; i < Weapon::TYPE_COUNT; ++i) weapons[i].Refill();
+}
+
 void WeaponManager::HandleInput() {
     float wheel = GetMouseWheelMove();
     if (wheel > 0.5f)  Next();

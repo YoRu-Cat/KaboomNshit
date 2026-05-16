@@ -10,6 +10,13 @@ public:
     // Sets up every weapon's stats. Call once at startup.
     void ConfigureAll();
 
+    // Per-frame tick so reload timers progress.
+    void Update(float dt);
+
+    // Top up every weapon to full mag + full reserve. Called on wave wipes /
+    // death-restart / map regen.
+    void RefillAll();
+
     // Reads input (mouse wheel + number keys) and updates current index.
     void HandleInput();
 

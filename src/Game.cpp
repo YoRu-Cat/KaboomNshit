@@ -35,6 +35,10 @@ bool Game::Initialize() {
     SetTargetFPS(144);
     DisableCursor();
 
+    textures.Load();
+    world.SetTextures(&textures.floor, &textures.structure, textures.skies, 3);
+    Enemy::SetTextures(textures.enemies);
+
     weapons.ConfigureAll();
 
     world.Generate((int)time(nullptr));
@@ -43,6 +47,7 @@ bool Game::Initialize() {
 }
 
 void Game::Shutdown() {
+    textures.Unload();
     if (IsWindowReady()) CloseWindow();
 }
 
@@ -79,10 +84,15 @@ void Game::HandleShooting(float dt) {
     if (player.Hp() <= 0.0f) return;
     if (fireCooldown > 0.0f) return;
 
-    const Weapon& w = weapons.Current();
+    Weapon& w = weapons.Current();
+    if (w.IsReloading()) return;
+
     bool pressed = w.IsAutomatic() ? IsMouseButtonDown(MOUSE_BUTTON_LEFT)
                                    : IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
     if (!pressed) return;
+
+    // Consume a round; bails out cleanly (and may auto-reload) if mag is empty.
+    if (!w.TryFire()) return;
 
     fireCooldown = w.FireCooldown();
 
@@ -114,7 +124,9 @@ void Game::HandleShooting(float dt) {
     }
 
     player.AddRecoil(w.Recoil());
-    cameraShake = std::max(cameraShake, cfg::SHAKE_ON_FIRE);
+    // Heavier guns shake more. Scale with recoil but never below the baseline.
+    cameraShake = std::max(cameraShake,
+                           std::max(cfg::SHAKE_ON_FIRE, w.Recoil() * 0.5f));
 }
 
 void Game::HandleGrenade(float dt) {
@@ -179,13 +191,12 @@ void Game::UpdateEnemyBullets(float dt) {
     const Vector3 p = player.Position();
     for (Bullet& b : enemyBullets) {
         if (!b.IsAlive()) continue;
-        Vector3 prevPos = b.Position();
-        // Advance and hit-test against world. We pass an empty enemy array so
-        // Bullet::Step doesn't damage enemies for us.
+
+        // Advance + world-hit test (no enemy targets — pass empty array).
         b.Step(dt, world, nullptr, 0);
         if (!b.IsAlive()) continue;
 
-        // Capsule hit: cylinder around the player from feet to head.
+        // Cylinder hit against the player capsule.
         Vector3 q = b.Position();
         float feetY = p.y - cfg::EYE_HEIGHT;
         float headY = p.y;
@@ -196,7 +207,6 @@ void Game::UpdateEnemyBullets(float dt) {
             player.TakeDamage(b.Damage(), q);
             cameraShake = std::max(cameraShake, cfg::SHAKE_ON_HIT);
             b.Kill();
-            (void)prevPos;
         }
     }
     enemyBullets.erase(std::remove_if(enemyBullets.begin(), enemyBullets.end(),
@@ -279,14 +289,19 @@ void Game::UpdateParticles(float dt) {
 void Game::Update(float dt) {
     if (IsKeyPressed(KEY_F1))   showHelp = !showHelp;
     if (IsKeyPressed(KEY_F11))  ToggleFullscreen();
-    if (IsKeyPressed(KEY_R) && player.Hp() <= 0.0f) {
-        player = Player();
-        bullets.clear();
-        enemyBullets.clear();
-        grenades.clear();
-        explosions.clear();
-        particles.clear();
-        SpawnEnemies(8);
+    if (IsKeyPressed(KEY_R)) {
+        if (player.Hp() <= 0.0f) {
+            player = Player();
+            bullets.clear();
+            enemyBullets.clear();
+            grenades.clear();
+            explosions.clear();
+            particles.clear();
+            weapons.RefillAll();
+            SpawnEnemies(8);
+        } else {
+            weapons.Current().StartReload();
+        }
     }
 
     // Re-roll the map with a fresh random seed.
@@ -298,6 +313,7 @@ void Game::Update(float dt) {
         grenades.clear();
         explosions.clear();
         particles.clear();
+        weapons.RefillAll();
         SpawnEnemies(8);
     }
 
@@ -311,6 +327,7 @@ void Game::Update(float dt) {
         grenades.clear();
         explosions.clear();
         particles.clear();
+        weapons.RefillAll();
         SpawnEnemies(8);
     }
 
@@ -339,12 +356,18 @@ void Game::Update(float dt) {
     swayPhase += dt * (1.5f + player.HorizontalSpeed() * 0.18f);
     hud.Update(dt);
 
+    weapons.Update(dt);
+
     int aliveEnemies = 0;
     for (const Enemy& e : enemies) if (e.IsAlive()) aliveEnemies++;
-    if (aliveEnemies == 0) SpawnEnemies((int)enemies.size() + 2);
+    if (aliveEnemies == 0) {
+        // Wave wipe: reward the player with a full restock before next wave.
+        weapons.RefillAll();
+        SpawnEnemies((int)enemies.size() + 2);
+    }
 }
 
-Camera3D Game::ApplyCameraShake(Camera3D cam) {
+Camera3D Game::ApplyCameraShake(Camera3D cam) const {
     if (cameraShake <= 0.0f) return cam;
     Vector3 forward = Vector3Normalize(Vector3Subtract(cam.target, cam.position));
     Vector3 right   = Vector3Normalize(Vector3CrossProduct(forward, cam.up));
@@ -379,7 +402,7 @@ void Game::DrawParticles() {
 void Game::Draw3DWorld(const Camera3D& cam) {
     BeginMode3D(cam);
         world.Draw();
-        for (const Enemy& e : enemies) e.Draw();
+        for (const Enemy& e : enemies) e.Draw(cam);
         DrawBullets();
         DrawGrenades();
         DrawExplosions();
@@ -405,6 +428,7 @@ void Game::DrawHelpText() {
     DrawText("C        slide",      x, y, 18, c); y += 20;
     DrawText("LMB      shoot",      x, y, 18, c); y += 20;
     DrawText("RMB / G  grenade",    x, y, 18, c); y += 20;
+    DrawText("R        reload",     x, y, 18, c); y += 20;
     DrawText("F1       toggle UI",  x, y, 18, c); y += 20;
     DrawText("F11      fullscreen", x, y, 18, c); y += 20;
     DrawText("M        new map",    x, y, 18, c); y += 20;
@@ -449,12 +473,32 @@ void Game::Draw2DOverlay() {
     DrawRectangle(sw / 2 - nw / 2 - 12, 8, nw + 24, 30, { 230, 230, 230, 220 });
     DrawText(name, sw / 2 - nw / 2, 12, 22, BLACK);
 
-    // Current weapon name, bottom-right.
-    const char* wname = weapons.Current().Name();
-    int ww = MeasureText(wname, 24);
+    // Current weapon — name + mag/reserve, bottom-right.
+    const Weapon& cur = weapons.Current();
+    const char* wname = cur.Name();
     int sh = GetScreenHeight();
-    DrawRectangle(sw - ww - 28, sh - 44, ww + 20, 32, { 230, 230, 230, 220 });
-    DrawText(wname, sw - ww - 18, sh - 40, 24, RED);
+
+    // Ammo line, e.g. "12 / 84" or "RELOADING..."
+    const char* ammoBuf = cur.IsReloading()
+        ? "RELOADING..."
+        : TextFormat("%d / %d", cur.Mag(), cur.ReserveAmmo());
+
+    int nameW = MeasureText(wname, 24);
+    int ammoW = MeasureText(ammoBuf, 22);
+    int boxW  = (nameW > ammoW ? nameW : ammoW) + 24;
+    int boxX  = sw - boxW - 16;
+    int boxY  = sh - 68;
+    DrawRectangle(boxX, boxY, boxW, 60, { 230, 230, 230, 220 });
+    DrawText(wname,   boxX + 12, boxY + 4,  24, RED);
+    DrawText(ammoBuf, boxX + 12, boxY + 34, 22, cur.IsReloading() ? BLACK : RED);
+
+    // Reload progress bar across the bottom of the ammo box.
+    if (cur.IsReloading()) {
+        float p = cur.ReloadProgress();
+        int barW = (int)((boxW - 16) * p);
+        DrawRectangle(boxX + 8, boxY + 56, boxW - 16, 3, { 200, 200, 200, 255 });
+        DrawRectangle(boxX + 8, boxY + 56, barW,      3, RED);
+    }
 
     if (showHelp) DrawHelpText();
     if (player.Hp() <= 0.0f) DrawDeathScreen();
@@ -463,9 +507,18 @@ void Game::Draw2DOverlay() {
 void Game::Draw() {
     Camera3D cam = ApplyCameraShake(player.BuildCamera());
     BeginDrawing();
-        // Pale, slightly-off-white. The cold cast makes the wireframes feel
-        // less like a tech demo and more like a sterile dream.
         ClearBackground({ 240, 238, 236, 255 });
+
+        // Sky backdrop — drawn as a 2D fullscreen blit before the 3D world.
+        // World geometry overdraws below the horizon line, leaving the sky
+        // visible above.
+        Texture2D* sky = world.CurrentSky();
+        if (sky && sky->id != 0) {
+            Rectangle src{ 0, 0, (float)sky->width, (float)sky->height };
+            Rectangle dst{ 0, 0, (float)GetScreenWidth(), (float)GetScreenHeight() };
+            DrawTexturePro(*sky, src, dst, { 0, 0 }, 0.0f, WHITE);
+        }
+
         Draw3DWorld(cam);
         Draw2DOverlay();
     EndDrawing();

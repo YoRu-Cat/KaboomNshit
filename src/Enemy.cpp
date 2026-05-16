@@ -22,6 +22,8 @@ namespace {
         Color wire;
     };
 
+    Texture2D* gEnemyTextures = nullptr;
+
     const KindStats KINDS[Enemy::KIND_COUNT] = {
         // CHASER
         { 60.0f,  4.0f, 14.0f, 1.2f, 0.8f, 0.45f, 1.8f, 1.0f,
@@ -52,6 +54,8 @@ Enemy::Enemy(Vector3 spawn, Kind k)
 {
     position.y = 0.0f;
 }
+
+void Enemy::SetTextures(Texture2D* tex3) { gEnemyTextures = tex3; }
 
 void Enemy::Update(float) {}
 
@@ -162,45 +166,47 @@ bool Enemy::RaycastHit(Vector3 origin, Vector3 dir, float maxDist, float& outT, 
 }
 
 void Enemy::Draw() const {
+    // No-op: enemies need the camera to billboard correctly. Game calls the
+    // camera-aware overload below; this exists only to satisfy IEntity.
+}
+
+void Enemy::Draw(const Camera3D& cam) const {
     if (!IsAlive() && deathTimer <= 0.0f) return;
     const KindStats& s = KINDS[kind];
     float yScale = IsAlive() ? 1.0f : deathTimer;
     if (yScale <= 0.0f) return;
 
-    Color fill = s.fill;
-    Color wire = s.wire;
+    Color tint = WHITE;
     if (hitFlash > 0.0f) {
-        fill = ColorAlphaBlend(fill, Fade(RED, hitFlash), WHITE);
+        // Tint toward red when freshly hit.
+        unsigned char gb = (unsigned char)(255.0f * (1.0f - hitFlash));
+        tint = { 255, gb, gb, 255 };
     }
 
-    float bodyH = s.height * 0.6f * s.scale * yScale;
-    float bodyW = s.radius * 1.6f * s.scale;
-    float bodyD = s.radius * 1.2f * s.scale;
+    // Pick the matching billboard texture.
+    Texture2D* tex = nullptr;
+    if (gEnemyTextures) {
+        int idx = (int)kind;
+        if (idx >= 0 && idx < KIND_COUNT) tex = &gEnemyTextures[idx];
+    }
 
-    Vector3 bodyCenter = { position.x, bodyH * 0.5f, position.z };
-    Vector3 bodySize   = { bodyW, bodyH, bodyD };
-    DrawCubeV(bodyCenter, bodySize, fill);
-    DrawCubeWiresV(bodyCenter, bodySize, wire);
-
-    float headSize = 0.45f * s.scale * yScale;
-    Vector3 headCenter = { position.x, bodyH + headSize * 0.5f, position.z };
-    Vector3 headSizeV  = { headSize, headSize, headSize };
-    DrawCubeV(headCenter, headSizeV, fill);
-    DrawCubeWiresV(headCenter, headSizeV, wire);
-
-    // Kind-specific accents:
-    if (kind == SHOOTER) {
-        // Tiny red barrel on the chest — telegraphs "this one shoots".
-        Vector3 b = { position.x, bodyH * 0.7f, position.z };
-        DrawCubeV(b, { 0.18f, 0.18f, 0.5f * s.scale }, RED);
-    } else if (kind == TANK) {
-        // Shoulders / armor plates.
-        Vector3 lpaul = { position.x - bodyW * 0.55f, bodyH * 0.85f, position.z };
-        Vector3 rpaul = { position.x + bodyW * 0.55f, bodyH * 0.85f, position.z };
-        Vector3 paulSize = { 0.35f, 0.35f, bodyD * 1.1f };
-        DrawCubeV(lpaul, paulSize, fill);
-        DrawCubeWiresV(lpaul, paulSize, wire);
-        DrawCubeV(rpaul, paulSize, fill);
-        DrawCubeWiresV(rpaul, paulSize, wire);
+    if (tex && tex->id != 0) {
+        // Billboard size scales with the kind's height/radius and shrinks on death.
+        Vector2 bbSize = {
+            s.radius * 2.4f * s.scale,
+            s.height       * s.scale * yScale,
+        };
+        Vector3 bbCenter = { position.x, bbSize.y * 0.5f, position.z };
+        Rectangle src = { 0.0f, 0.0f, (float)tex->width, (float)tex->height };
+        DrawBillboardRec(cam, *tex, src, bbCenter, bbSize, tint);
+    } else {
+        // Procedural fallback (no texture set).
+        float bodyH = s.height * 0.6f * s.scale * yScale;
+        float bodyW = s.radius * 1.6f * s.scale;
+        float bodyD = s.radius * 1.2f * s.scale;
+        Vector3 bodyCenter = { position.x, bodyH * 0.5f, position.z };
+        Vector3 bodySize   = { bodyW, bodyH, bodyD };
+        DrawCubeV(bodyCenter, bodySize, s.fill);
+        DrawCubeWiresV(bodyCenter, bodySize, s.wire);
     }
 }

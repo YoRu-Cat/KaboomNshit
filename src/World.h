@@ -20,12 +20,21 @@ public:
     };
 
     World();
+    ~World();
+
+    // Bind to the texture library. Builds the textured ground & pillar models.
+    // Pass the floor + structure textures and the array of skies + its length.
+    void SetTextures(Texture2D* floor, Texture2D* structure,
+                     Texture2D* skies, int skyCount);
 
     // Single entry point. Seed picks theme as `seed % THEME_COUNT`.
     void Generate(int seed);
 
     // Explicit theme variant (useful for debugging / theme-specific tuning).
     void Generate(int seed, Theme theme);
+
+    // The 2D sky backdrop currently active (chosen at last Generate).
+    Texture2D* CurrentSky() const { return currentSky; }
 
     Vector3 ResolvePlayerMove(Vector3 from, Vector3 desired, float radius, Vector3& velocityInOut) const;
     HitInfo Raycast(Vector3 origin, Vector3 dir, float maxDist) const;
@@ -81,4 +90,16 @@ private:
     float             mapHalf;
     const char*       mapName;
     int               lastSeed;
+
+    // Texture refs (owned by TextureLibrary in Game).
+    Texture2D*        floorTex;
+    Texture2D*        structureTex;
+    Texture2D*        skyArray;
+    int               skyCount;
+    Texture2D*        currentSky;
+
+    // Cached textured models. Built once in SetTextures, reused every draw.
+    Model             groundModel;
+    Model             pillarUnitModel;
+    bool              modelsBuilt;
 };

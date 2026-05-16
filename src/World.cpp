@@ -33,7 +33,60 @@ World::World()
     : mapHalf(cfg::MAP_HALF)
     , mapName("(uninitialized)")
     , lastSeed(0)
-{}
+    , floorTex(nullptr)
+    , structureTex(nullptr)
+    , skyArray(nullptr)
+    , skyCount(0)
+    , currentSky(nullptr)
+    , modelsBuilt(false)
+{
+    groundModel = { 0 };
+    pillarUnitModel = { 0 };
+}
+
+World::~World() {
+    if (modelsBuilt) {
+        UnloadModel(groundModel);
+        UnloadModel(pillarUnitModel);
+        modelsBuilt = false;
+    }
+}
+
+void World::SetTextures(Texture2D* floor, Texture2D* structure,
+                       Texture2D* skies, int count) {
+    floorTex     = floor;
+    structureTex = structure;
+    skyArray     = skies;
+    skyCount     = count;
+
+    if (modelsBuilt) {
+        UnloadModel(groundModel);
+        UnloadModel(pillarUnitModel);
+        modelsBuilt = false;
+    }
+
+    // Tiled ground plane: scale UV coords up so the texture repeats.
+    Mesh groundMesh = GenMeshPlane(mapHalf * 2.0f, mapHalf * 2.0f, 1, 1);
+    for (int i = 0; i < groundMesh.vertexCount; ++i) {
+        groundMesh.texcoords[i * 2 + 0] *= mapHalf * 0.25f;
+        groundMesh.texcoords[i * 2 + 1] *= mapHalf * 0.25f;
+    }
+    UpdateMeshBuffer(groundMesh, 1, groundMesh.texcoords,
+                     groundMesh.vertexCount * 2 * sizeof(float), 0);
+    groundModel = LoadModelFromMesh(groundMesh);
+
+    pillarUnitModel = LoadModelFromMesh(GenMeshCube(1.0f, 1.0f, 1.0f));
+
+    if (floorTex)     SetMaterialTexture(&groundModel.materials[0],
+                                        MATERIAL_MAP_DIFFUSE, *floorTex);
+    if (structureTex) SetMaterialTexture(&pillarUnitModel.materials[0],
+                                        MATERIAL_MAP_DIFFUSE, *structureTex);
+
+    modelsBuilt = true;
+
+    // Pick an initial sky in case Generate isn't called yet.
+    if (skyArray && skyCount > 0) currentSky = &skyArray[0];
+}
 
 bool World::TooCloseToSpawn(float cx, float cz, float w, float d) const {
     // Treat the pillar's bounding XZ as a circle for a coarse exclusion check.
@@ -68,6 +121,11 @@ void World::Generate(int seed, Theme theme) {
     pillars.clear();
     lastSeed = seed;
     SetRandomSeed((unsigned)seed);
+
+    if (skyArray && skyCount > 0) {
+        int idx = GetRandomValue(0, skyCount - 1);
+        currentSky = &skyArray[idx];
+    }
 
     switch (theme) {
         case THEME_TOWER_CITY:  GenTowerCity(seed);  break;
@@ -691,12 +749,23 @@ HitInfo World::Raycast(Vector3 origin, Vector3 dir, float maxDist) const {
 }
 
 void World::Draw() const {
-    DrawPlane({ 0, 0, 0 }, { mapHalf * 2.0f, mapHalf * 2.0f }, WHITE);
-    DrawGrid((int)(mapHalf * 2.0f), 1.0f);
+    if (modelsBuilt && floorTex) {
+        DrawModel(groundModel, { 0, 0, 0 }, 1.0f, WHITE);
+    } else {
+        DrawPlane({ 0, 0, 0 }, { mapHalf * 2.0f, mapHalf * 2.0f }, WHITE);
+        // Only show the abstract grid when we have no texture to fall back to.
+        DrawGrid((int)(mapHalf * 2.0f), 1.0f);
+    }
+
     for (const AABB& b : pillars) {
         Vector3 c = AABBCenter(b);
         Vector3 s = AABBSize(b);
-        DrawCubeV(c, s, WHITE);
-        DrawCubeWiresV(c, s, BLACK);
+        if (modelsBuilt && structureTex) {
+            DrawModelEx(pillarUnitModel, c, { 0, 1, 0 }, 0.0f, s, WHITE);
+            DrawCubeWiresV(c, s, BLACK);
+        } else {
+            DrawCubeV(c, s, WHITE);
+            DrawCubeWiresV(c, s, BLACK);
+        }
     }
 }
